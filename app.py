@@ -26,7 +26,7 @@ def check_password():
 
 if check_password():
     # 🔐 Conexión privada y segura a Google Sheets (Toma la URL de tus Secrets)
-    conn = st.connection("gsheets", type="connections.SheetsConnection")
+    conn = st.connection("gsheets", type="gsheets")
     
     @st.cache_data(ttl=60)  # Se actualiza cada 1 minuto
     def load_data(sheet_name):
