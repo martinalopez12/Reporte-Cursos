@@ -26,7 +26,7 @@ def check_password():
 
 if check_password():
     # ID de tu Google Sheet (Reemplazalo por el tuyo real)
-    SHEET_ID = "TU_ID_DE_GOOGLE_SHEETS_AQUÍ"
+    SHEET_ID = "https://docs.google.com/spreadsheets/d/1d1eQgFyK3uOJhE1zXgjF30GwA-M682YogSTAa73OP9g/edit?usp=sharing"
     
     @st.cache_data(ttl=60)  # Se actualiza cada 1 minuto para que vea tus cambios al toque
     def load_data(sheet_name):
