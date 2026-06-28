@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+# 1. AGREGAMOS ESTA IMPORTACIÓN EXPLICITA ARRIBA DE TODO:
 from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
@@ -26,8 +27,8 @@ def check_password():
     return False
 
 if check_password():
-    # 🔐 Conexión privada y segura a Google Sheets (Toma la URL de tus Secrets)
-    conn = st.connection("gsheets", type="GSheetsConnection")
+    # 2. MODIFICAMOS ESTA LÍNEA (SIN COMILLAS):
+    conn = st.connection("gsheets", type=GSheetsConnection)
     
     @st.cache_data(ttl=60)  # Se actualiza cada 1 minuto
     def load_data(sheet_name):
@@ -37,6 +38,11 @@ if check_password():
         except Exception as e:
             st.error(f"No se pudo cargar la hoja {sheet_name}. Verificá la URL en Secrets.")
             return pd.DataFrame()
+
+    # Cargamos las pestañas del Excel
+    df_pagos = load_data("Pagos")
+    df_cursos = load_data("Cursos")
+    df_historico = load_data("Historico")
 
     # Cargamos las pestañas del Excel
     df_pagos = load_data("Pagos")
