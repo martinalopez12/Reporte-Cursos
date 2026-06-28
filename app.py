@@ -27,14 +27,14 @@ def check_password():
     return False
 
 if check_password():
+    # 🔐 Conexión privada y segura a Google Sheets
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
     @st.cache_data(ttl=60)  # Se actualiza cada 1 minuto
     def load_data(sheet_name):
         try:
-            # Tomamos la URL guardada de forma segura en tus Secrets
-            base_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
-            # Reemplazamos el final por la query de exportación a CSV directa de Google
-            csv_url = base_url.replace("/edit", f"/gviz/tq?tqx=out:csv&sheet={sheet_name}")
-            return pd.read_csv(csv_url)
+            # Lee de forma automática usando las llaves seguras del panel de Secrets
+            return conn.read(worksheet=sheet_name)
         except Exception as e:
             st.error(f"No se pudo cargar la hoja '{sheet_name}'. Error: {e}")
             return pd.DataFrame()
