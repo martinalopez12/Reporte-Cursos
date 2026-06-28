@@ -42,12 +42,22 @@ if check_password():
     df_cursos = load_data("Cursos")
     df_historico = load_data("Historico")
 
-    # Limpieza y formateo de strings basado en tus columnas reales
-    for df in [df_pagos, df_historico]:
-        if "Contacto Nuevo" in df.columns:
-            df["Contacto Nuevo"] = df["Contacto Nuevo"].fillna("").astype(str)
-        if "Contacto Viejo" in df.columns:
-            df["Contacto Viejo"] = df["Contacto Viejo"].fillna("").astype(str)
+    # Limpieza y formateo de strings basado en tus columnas reales sin romper referencias
+    if not df_pagos.empty:
+        df_pagos = df_pagos.copy()
+        if "Contacto Nuevo" in df_pagos.columns:
+            df_pagos["Contacto Nuevo"] = df_pagos["Contacto Nuevo"].fillna("").astype(str).str.strip()
+        if "Contacto Viejo" in df_pagos.columns:
+            df_pagos["Contacto Viejo"] = df_pagos["Contacto Viejo"].fillna("").astype(str).str.strip()
+        if "Costo" in df_pagos.columns:
+            df_pagos["Costo"] = pd.to_numeric(df_pagos["Costo"], errors='coerce').fillna(0)
+
+    if not df_historico.empty:
+        df_historico = df_historico.copy()
+        if "Contacto Nuevo" in df_historico.columns:
+            df_historico["Contacto Nuevo"] = df_historico["Contacto Nuevo"].fillna("").astype(str).str.strip()
+        if "Contacto Viejo" in df_historico.columns:
+            df_historico["Contacto Viejo"] = df_historico["Contacto Viejo"].fillna("").astype(str).str.strip()
 
     # Menú lateral
     opcion = st.sidebar.radio(
@@ -79,7 +89,7 @@ if check_password():
                 for curso in list(cursos_del_mes):
                     df_curso_pend = df_pendientes[df_pendientes["Curso"] == curso]
                     
-                    # REGLA DEL PUNTITO AZUL/VERDE: Si tiene filas donde 'Notif. Andre' es True
+                    # REGLA DEL PUNTITO AZUL: Si tiene filas donde 'Notif. Andre' es True
                     tiene_novedad = False
                     if "Notif. Andre" in df_curso_pend.columns:
                         tiene_novedad = df_curso_pend["Notif. Andre"].any()
@@ -91,9 +101,9 @@ if check_password():
                     with st.expander(titulo_toggle):
                         df_mostrar = df_curso_pend.copy()
                         
-                        # Consolidamos el nombre del alumno
+                        # Consolidamos el nombre del alumno evitando conflictos de nulos
                         df_mostrar["Nombre Alumno"] = df_mostrar.apply(
-                            lambda r: r["Contacto Nuevo"] if r["Contacto Nuevo"] != "" else r["Contacto Viejo"], axis=1
+                            lambda r: r["Contacto Nuevo"] if str(r["Contacto Nuevo"]).strip() != "" else r["Contacto Viejo"], axis=1
                         )
                         
                         columnas_finales = ["Nombre Alumno", "Fecha de Aplazo", "Comentario", "Mensaje Recordatorio Pagos", "Notif. Andre"]
@@ -129,15 +139,12 @@ if check_password():
             ano_sel = st.selectbox("Seleccioná el Año:", [ano_act - 1, ano_act, ano_act + 1], index=1)
 
         if not df_pagos.empty and "Mes" in df_pagos.columns and "Año" in df_pagos.columns:
-            df_rec = df_pagos[(df_pagos["Mes"] == mes_sel) & (df_pagos["Año"] == ano_sel)]
+            df_rec = df_pagos[(df_pagos["Mes"] == mes_sel) & (df_pagos["Año"] == ano_sel)].copy()
             
             if df_rec.empty:
                 st.warning("No hay registros de cursos para el mes seleccionado.")
             else:
                 resumen_data = []
-                # Forzamos numérico en Costo por si viene como texto
-                df_rec["Costo"] = pd.to_numeric(df_rec["Costo"], errors='coerce').fillna(0)
-                
                 for curso, group in df_rec.groupby("Curso"):
                     acumulado = group[group["Estado"] == "Pagado"]["Costo"].sum()
                     esperado = group["Costo"].sum()
@@ -167,7 +174,7 @@ if check_password():
             resultados_pagos = df_pagos[
                 df_pagos["Contacto Nuevo"].str.lower().str.contains(nombre_buscado) | 
                 df_pagos["Contacto Viejo"].str.lower().str.contains(nombre_buscado)
-            ]
+            ].copy()
             
             st.subheader(f"Resultados encontrados para: '{nombre_buscado}'")
             
@@ -176,7 +183,7 @@ if check_password():
             else:
                 df_res = resultados_pagos.copy()
                 df_res["Nombre Encontrado"] = df_res.apply(
-                    lambda r: r["Contacto Nuevo"] if str(r["Contacto Nuevo"]) != "" else r["Contacto Viejo"], axis=1
+                    lambda r: r["Contacto Nuevo"] if str(r["Contacto Nuevo"]).strip() != "" else r["Contacto Viejo"], axis=1
                 )
                 
                 # Armamos la fecha unificada con tus columnas Día, Mes, Año
