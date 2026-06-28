@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(page_title="Dashboard Cursos Andre", layout="wide")
@@ -26,7 +27,7 @@ def check_password():
 
 if check_password():
     # 🔐 Conexión privada y segura a Google Sheets (Toma la URL de tus Secrets)
-    conn = st.connection("gsheets", type="gsheets")
+    conn = st.connection("gsheets", type="GSheetsConnection")
     
     @st.cache_data(ttl=60)  # Se actualiza cada 1 minuto
     def load_data(sheet_name):
