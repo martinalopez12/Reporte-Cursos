@@ -126,7 +126,6 @@ def pagina_pendientes():
     # Filtrar el DataFrame original de pagos acumulando las coincidencias
     df_filtrado_acum = pd.DataFrame()
     for p in periodos:
-        # Aseguramos coincidencia de tipos numéricos/texto
         df_mes_año = df_pagos[
             (df_pagos['Mes'].astype(str) == str(p["mes"])) & 
             (df_pagos['Año'].astype(str) == str(p["año"]))
@@ -137,8 +136,8 @@ def pagina_pendientes():
         st.info("No se encontraron registros de pagos para los meses seleccionados.")
         return
         
-    # Filtrar solo los que NO están "Pagado" (Pendiente o vacío)
-    df_no_pagados = df_filtrado_acum[df_filtrado_acum['Estado'].astype(str).str.strip().lower() != 'pagado']
+    # --- CORRECCIÓN AQUÍ: Se agregó .str antes de .lower() ---
+    df_no_pagados = df_filtrado_acum[df_filtrado_acum['Estado'].astype(str).str.strip().str.lower() != 'pagado']
     
     if df_no_pagados.empty:
         st.success("🎉 ¡Todos los cursos seleccionados están completamente al día!")
@@ -149,31 +148,27 @@ def pagina_pendientes():
         "Contacto Nuevo", "Contacto Viejo", "Estado", "Fecha de Aplazo", "Comentario", 
         "Notif. Andre", "Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2", 
         "Estado Pago 3", "Fecha de Pago 3", "Fecha de Aplazo 3", "Comentario 3",
-        "Nombre", "Nro de Curso", "Día", "Mes", "Año" # Auxiliares para agrupar cursos
+        "Nombre", "Nro de Curso", "Día", "Mes", "Año"
     ]
     
-    # Validar cuáles existen realmente en la planilla
     cols_existentes = [c for c in columnas_mostrar if c in df_no_pagados.columns]
     df_final = df_no_pagados[cols_existentes].copy()
     
-    # Agrupar por Curso único (Nombre, Nro de Curso, Día, Mes, Año)
     group_cols = [c for c in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"] if c in df_final.columns]
     
     if not group_cols:
-        st.dataframe(df_final, use_container_width=True)
+        st.dataframe(df_final, width="stretch")
         return
         
     cursos_unicos = df_final[group_cols].drop_duplicates()
     
     for _, curso in cursos_unicos.iterrows():
-        # Generar máscara para aislar los alumnos de este curso particular
         condicion = True
         for col in group_cols:
             condicion = condicion & (df_final[col] == curso[col])
             
         df_curso = df_final[condicion].copy()
         
-        # Título del Toggle identificando el curso de manera única
         nombre_c = curso.get("Nombre", "Curso")
         nro_c = curso.get("Nro de Curso", "-")
         dia_c = curso.get("Día", "-")
@@ -183,18 +178,15 @@ def pagina_pendientes():
         titulo_toggle = f"📘 {nombre_c} (Nro: {nro_c}) — Fecha: {dia_c}/{mes_c}/{anio_c} ({len(df_curso)} pendientes)"
         
         with st.expander(titulo_toggle):
-            # Columnas limpias a mostrar al usuario final (quitando auxiliares de agrupación si no se desean duplicadas)
             cols_vista = [c for c in cols_existentes if c not in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"]]
             df_vista = df_curso[cols_vista].copy()
             
-            # Formatear booleanos antes de renderizar
             cols_bool = ["Contacto Nuevo", "Contacto Viejo", "Notif. Andre"]
             df_vista = apply_boolean_formatting(df_vista, cols_bool)
             
-            # Aplicar color y renderizar mediante Styler
             st.dataframe(
                 df_vista.style.apply(highlight_notif_andre, axis=1),
-                use_container_width=True
+                width="stretch"
             )
 
 def pagina_recaudado():
@@ -218,7 +210,6 @@ def pagina_recaudado():
         st.info("No se encontraron registros de alumnos para los meses seleccionados.")
         return
 
-    # Definición única de cursos presentes en la selección
     group_cols = [c for c in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"] if c in df_filtrado_acum.columns]
     cursos_unicos = df_filtrado_acum[group_cols].drop_duplicates()
     
@@ -235,31 +226,27 @@ def pagina_recaudado():
         mes_c = curso.get("Mes", "")
         anio_c = curso.get("Año", "")
         
-        # 1. Calcular Recaudado Real (Estado == "Pagado")
-        df_pagados = df_curso_alumnos[df_curso_alumnos['Estado'].astype(str).str.strip().lower() == 'pagado']
+        # --- CORRECCIÓN AQUÍ: Se agregó .str antes de .lower() ---
+        df_pagados = df_curso_alumnos[df_curso_alumnos['Estado'].astype(str).str.strip().str.lower() == 'pagado']
         recaudado_real = pd.to_numeric(df_pagados['Costo'], errors='coerce').sum()
         
-        # 2. Total de personas inscritas en este bloque
         total_personas = len(df_curso_alumnos)
         
-        # 3. Buscar Costo base en la hoja 'Cursos' o deducirlo del alumno
         costo_unitario = 0
         if 'Nombre' in df_cursos.columns and 'Costo' in df_cursos.columns:
-            match_curso = df_cursos[df_cursos['Nombre'].astype(str).str.strip().lower() == str(nombre_c).strip().lower()]
+            match_curso = df_cursos[df_cursos['Nombre'].astype(str).str.strip().str.lower() == str(nombre_c).strip().lower()]
             if not match_curso.empty:
                 costo_unitario = pd.to_numeric(match_curso['Costo'].iloc[0], errors='coerce')
         
-        if costo_unitario == 0:  # Intento de respaldo analizando los registros cargados
+        if costo_unitario == 0:
             costo_unitario = pd.to_numeric(df_curso_alumnos['Costo'], errors='coerce').max()
             
         costo_unitario = 0 if pd.isna(costo_unitario) else costo_unitario
         
-        # 4. Calcular Esperado e indicadores derivados
         esperado_total = costo_unitario * total_personas
         falta_cobrar = esperado_total - recaudado_real
         
-        # 5. Calcular contactos nuevos
-        is_nuevo = df_curso_alumnos['Contacto Nuevo'].astype(str).str.strip().lower().isin(['true', '1', 'sí', 'si'])
+        is_nuevo = df_curso_alumnos['Contacto Nuevo'].astype(str).str.strip().str.lower().isin(['true', '1', 'sí', 'si'])
         total_contactos_nuevos = is_nuevo.sum()
         
         titulo_recaudacion = f"📈 Financiero: {nombre_c} (Nro: {nro_c}) — {dia_c}/{mes_c}/{anio_c}"
@@ -277,7 +264,6 @@ def pagina_recaudado():
 def pagina_buscador():
     st.title("🔍 Historial y Auditoría de Contactos")
     
-    # Unificar universos para recolectar todos los nombres de estudiantes registrados
     nombres_historico = df_historico['Contacto'].dropna().unique().tolist() if 'Contacto' in df_historico.columns else []
     nombres_pagos = df_pagos['Contacto'].dropna().unique().tolist() if 'Contacto' in df_pagos.columns else []
     lista_contactos_completa = sorted(list(set(nombres_historico + nombres_pagos)))
@@ -299,7 +285,6 @@ def pagina_buscador():
         st.write("### Buscar por Número de Teléfono")
         telefono_seleccionado = st.selectbox("Escribí o seleccioná el teléfono:", [""] + lista_telefonos_completa)
 
-    # Filtrado lógico prioritario según la acción del usuario
     df_resultados = pd.DataFrame()
     termino_busqueda = ""
     
@@ -322,7 +307,6 @@ def pagina_buscador():
         
     st.success(f"📌 Expediente de Cursos Encontrados para: {termino_busqueda}")
     
-    # Estructurar las columnas solicitadas por el usuario para la auditoría individual
     columnas_buscador = [
         "Nombre", "Nro de Curso", "Día", "Mes", "Año", "Estado", "Fecha de Pago", "Fecha de Aplazo", "Comentario",
         "Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2",
@@ -333,10 +317,9 @@ def pagina_buscador():
     cols_existentes = [c for c in columnas_buscador if c in df_resultados.columns]
     df_buscador_vista = df_resultados[cols_existentes].copy()
     
-    # Formatear booleano solicitado
     df_buscador_vista = apply_boolean_formatting(df_buscador_vista, ["msj recordatorio"])
     
-    st.dataframe(df_buscador_vista, use_container_width=True, hide_index=True)
+    st.dataframe(df_buscador_vista, width="stretch", hide_index=True)
 
 # --- MAPEO DEL MENÚ LATERAL DE NAVEGACIÓN ---
 paginas = {
@@ -346,9 +329,8 @@ paginas = {
     "🔍 Buscador de Contactos": pagina_buscador
 }
 
-# Renderizar barra de navegación usando el estándar nativo de Streamlit
 st.sidebar.title("🧭 Navegación")
 seleccion = st.sidebar.radio("Ir a la sección:", list(paginas.keys()))
 
-# Ejecución dinámica de la vista elegida
+# Ejecución dinámica
 paginas[seleccion]()
