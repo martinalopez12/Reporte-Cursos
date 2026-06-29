@@ -58,7 +58,7 @@ df_historico = load_data_from_sheet("Historico")
 
 # --- FUNCIONES DE FORMATEO Y SOPORTE ---
 def format_boolean_cell(val):
-    """Transforma valores booleanos/texto en emojis ✔️ / ❌ para campos puramente booleanos."""
+    """Transforma valores booleanos/texto en emojis ✔️ / ❌."""
     if val is True or str(val).strip().lower() in ['true', '1', 'sí', 'si']:
         return "✔️"
     return "❌"
@@ -72,7 +72,7 @@ def apply_boolean_formatting(df, columns_to_format):
     return df_copy
 
 def highlight_notif_andre(row):
-    """Pinta toda la fila si 'Notif. Andre' es verdadero o ✔️."""
+    """Pinta toda la fila si 'Notif. Andre' es verdadero."""
     val = row.get("Notif. Andre")
     is_true = val is True or str(val).strip().lower() in ['true', '1', 'sí', 'si', '✔️']
     if is_true:
@@ -123,7 +123,7 @@ def pagina_pendientes():
         
     periodos = selector_fechas_multiples("pendientes")
     
-    # Filtrar el DataFrame original de pagos acumulando las fechas
+    # Filtrar el DataFrame original de pagos acumulando las coincidencias
     df_filtrado_acum = pd.DataFrame()
     for p in periodos:
         df_mes_año = df_pagos[
@@ -135,63 +135,80 @@ def pagina_pendientes():
     if df_filtrado_acum.empty:
         st.info("No se encontraron registros de pagos para los meses seleccionados.")
         return
-        
-    # Agrupamos los cursos usando el DataFrame antes de filtrar no-pagados para saber el TOTAL real inscrito
-    group_cols = [c for c in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"] if c in df_filtrado_acum.columns]
+
+    # Clonamos para no destruir la data original durante el formateo de nombres
+    df_procesado = df_filtrado_acum.copy()
+
+    # Reemplazamos los booleanos de contacto nuevo/viejo por el nombre real si son verdaderos
+    if 'Contacto' in df_procesado.columns:
+        for col_contacto in ["Contacto Nuevo", "Contacto Viejo"]:
+            if col_contacto in df_procesado.columns:
+                df_procesado[col_contacto] = df_procesado.apply(
+                    lambda r: r['Contacto'] if str(r[col_contacto]).strip().lower() in ['true', '1', 'sí', 'si', 'yes'] else "",
+                    axis=1
+                )
+
+    # Identificamos filas que tengan AL MENOS una cuota pendiente
+    condicion_pendiente = pd.Series(False, index=df_procesado.index)
+    
+    if 'Estado' in df_procesado.columns:
+        condicion_pendiente |= (df_procesado['Estado'].astype(str).str.strip().str.lower() != 'pagado')
+    if 'Estado Pago 2' in df_procesado.columns:
+        condicion_pendiente |= (df_procesado['Estado Pago 2'].astype(str).str.strip().str.lower().isin(['', 'pendiente', 'debe'])) # Ajustar según tus estados para cuota 2
+    if 'Estado Pago 3' in df_procesado.columns:
+        condicion_pendiente |= (df_procesado['Estado Pago 3'].astype(str).str.strip().str.lower().isin(['', 'pendiente', 'debe'])) # Ajustar según tus estados para cuota 3
+
+    df_no_pagados = df_procesado[condicion_pendiente]
+    
+    if df_no_pagados.empty:
+        st.success("🎉 ¡Todos los cursos seleccionados están completamente al día!")
+        return
+
+    group_cols = [c for c in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"] if c in df_no_pagados.columns]
     
     if not group_cols:
-        st.warning("Faltan columnas de agrupación esenciales en tu Google Sheet (Nombre, Nro de Curso, Día, Mes o Año).")
+        st.dataframe(df_no_pagados, width="stretch")
         return
         
-    cursos_unicos = df_filtrado_acum[group_cols].drop_duplicates()
+    cursos_unicos = df_no_pagados[group_cols].drop_duplicates()
     
-    for _, curso in cursos_unicos.iterrows():
-        # Aislamos el universo total de este curso para calcular el total histórico del mes
-        condicion_curso = True
+    for idx_curso, curso in cursos_unicos.iterrows():
+        condicion = True
         for col in group_cols:
-            condicion_curso = condicion_curso & (df_filtrado_acum[col] == curso[col])
+            condicion = condicion & (df_no_pagados[col] == curso[col])
             
-        df_universo_curso = df_filtrado_acum[condicion_curso].copy()
-        total_inscritos_curso = len(df_universo_curso)
+        df_curso = df_no_pagados[condicion].copy()
         
-        # Filtramos los PENDIENTES de este curso específico (aquellos que NO están "Pagado")
-        df_pendientes_curso = df_universo_curso[df_universo_curso['Estado'].astype(str).str.strip().str.lower() != 'pagado'].copy()
-        total_pendientes_curso = len(df_pendientes_curso)
-        
-        # Si no hay pendientes en este curso, pasamos al siguiente sin mostrar el toggle vacío
-        if total_pendientes_curso == 0:
-            continue
-
-        # --- CONSTRUCCIÓN DEL TÍTULO DINÁMICO REQUERIDO ---
         nombre_c = curso.get("Nombre", "Curso")
-        nro_c = str(curso.get("Nro de Curso", "")).strip()
+        nro_c = curso.get("Nro de Curso", "-")
         dia_c = curso.get("Día", "-")
         mes_c = curso.get("Mes", "-")
         
-        nivel_str = f" [nivel {nro_c}]" if nro_c and nro_c != "0" and nro_c.lower() != "none" else ""
-        titulo_toggle = f"📘 {nombre_c}{nivel_str} {dia_c}/{mes_c} ({total_pendientes_curso}/{total_inscritos_curso} pendientes)"
+        # Titulo modificado: Nombre, Nro de curso, Fecha sin Año y el texto de pendientes intacto
+        titulo_toggle = f"📘 {nombre_c} (Nro: {nro_c}) — Fecha: {dia_c}/{mes_c} ({len(df_curso)} pendientes)"
         
         with st.expander(titulo_toggle):
-            # --- TRANSFORMACIÓN DE CONTACTO NUEVO / VIEJO CON NOMBRES REALES ---
-            # Si el valor booleano indica verdadero, rellenamos con el nombre del Alumno ('Contacto')
-            df_pendientes_curso['Contacto Nuevo'] = df_pendientes_curso.apply(
-                lambda r: r['Contacto'] if str(r.get('Contacto Nuevo')).strip().lower() in ['true', '1', 'sí', 'si'] else "", axis=1
-            )
-            df_pendientes_curso['Contacto Viejo'] = df_pendientes_curso.apply(
-                lambda r: r['Contacto'] if str(r.get('Contacto Viejo')).strip().lower() in ['true', '1', 'sí', 'si'] else "", axis=1
-            )
+            # Checkboxes dinámicos usando llaves únicas
+            st.write("🔧 **Columnas adicionales de cuotas:**")
+            col_chk2, col_chk3 = st.columns(2)
+            with col_chk2:
+                ver_cuota_2 = st.checkbox("Ver Cuota 2", key=f"chk2_{idx_curso}")
+            with col_chk3:
+                ver_cuota_3 = st.checkbox("Ver Cuota 3", key=f"chk3_{idx_curso}")
+
+            # Construcción dinámica de columnas a mostrar
+            columnas_base = ["Contacto Nuevo", "Contacto Viejo", "Estado", "Fecha de Pago", "Fecha de Aplazo", "Comentario", "Notif. Andre"]
             
-            # Columnas requeridas para mostrar ordenadamente en pantalla
-            columnas_mostrar = [
-                "Contacto Nuevo", "Contacto Viejo", "Estado", "Fecha de Pago", "Fecha de Aplazo", "Comentario", 
-                "Notif. Andre", "Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2", 
-                "Estado Pago 3", "Fecha de Pago 3", "Fecha de Aplazo 3", "Comentario 3"
-            ]
+            if ver_cuota_2:
+                columnas_base += ["Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2"]
+            if ver_cuota_3:
+                columnas_base += ["Estado Pago 3", "Fecha de Pago 3", "Fecha de Aplazo 3", "Comentario 3"]
+
+            # Filtrar solo las columnas que existan de verdad en la hoja de cálculo
+            cols_vista = [c for c in columnas_base if c in df_curso.columns]
+            df_vista = df_curso[cols_vista].copy()
             
-            cols_existentes = [c for c in columnas_mostrar if c in df_pendientes_curso.columns]
-            df_vista = df_pendientes_curso[cols_existentes].copy()
-            
-            # Formateamos solo Notif. Andre como booleano (los contactos ya llevan texto real)
+            # Formateamos solo Notif. Andre (ya que Contacto Nuevo/Viejo ahora tienen nombres propios)
             df_vista = apply_boolean_formatting(df_vista, ["Notif. Andre"])
             
             st.dataframe(
@@ -302,10 +319,10 @@ def pagina_buscador():
         termino_busqueda = contacto_seleccionado
         if not df_pagos.empty and 'Contacto' in df_pagos.columns:
             df_resultados = df_pagos[df_pagos['Contacto'].astype(str) == contacto_seleccionado]
-    elif phone_seleccionado := telefono_seleccionado:
-        termino_busqueda = phone_seleccionado
+    elif telefono_seleccionado:
+        termino_busqueda = telefono_seleccionado
         if not df_pagos.empty and 'Teléfono' in df_pagos.columns:
-            df_resultados = df_pagos[df_pagos['Teléfono'].astype(str) == phone_seleccionado]
+            df_resultados = df_pagos[df_pagos['Teléfono'].astype(str) == telefono_seleccionado]
             
     if termino_busqueda == "":
         st.info("Por favor, seleccioná un criterio arriba para trazar el estado de pagos.")
