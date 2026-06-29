@@ -126,7 +126,7 @@ def pagina_intro():
 def pagina_pendientes():
     st.title("💸 Control de Pagos Pendientes")
     st.write("##### Resumen mensual de deudores por cada curso")
-    st.caption("###### 💡 Es calve para hacer un control filtrando por una o más fechas (podes sacarlas haciendo click en la cruz roja del mes correspondiente en la sección 'Períodos Activos'),  ordenarlos a gusto, y verlos o minimizarlos todos juntos haciendo click en 'Abrir/Cerrar todas las pestañas de los cursos'. \nCONSIDERACIONES: Si ves que dentro de los cursos aparece una casilla (para chequear/clickear) con 'cuota 2' o '3', podes chequearla para ver esos datos en específico (podes ver 1 cuota a la vez).")
+    st.caption("###### 💡 Es clave para hacer un control filtrando por una o más fechas (podes sacarlas haciendo click en la cruz roja del mes correspondiente en la sección 'Períodos Activos'), ordenarlos a gusto, y verlos o minimizarlos todos juntos haciendo click en 'Abrir/Cerrar todas las pestañas de los cursos'. \nCONSIDERACIONES: Si ves que dentro de los cursos aparece una casilla (para chequear/clickear) con 'cuota 2' o '3', podes chequearla para ver esos datos en específico (podes ver 1 cuota a la vez).")
     st.write("---")
 
     if df_pagos.empty:
@@ -182,7 +182,7 @@ def pagina_pendientes():
         
     cursos_unicos = df_procesado[group_cols].drop_duplicates()
 
-    # --- NUEVA SECCIÓN: CONTROL DE EXPANDERS ---
+    # --- CONTROL DE EXPANDERS ---
     col_orden, col_expandir = st.columns([2, 1])
     with col_expandir:
         abrir_todos = st.checkbox("🔓 Abrir/Cerrar todas las pestañas de los cursos", key="expandir_pendientes")
@@ -265,7 +265,6 @@ def pagina_pendientes():
         
         titulo_toggle = f"📘 {nombre_c}{texto_nro} - ({total_pendientes_metrica}/{total_alumnos_curso} pendientes) - [Fecha: {dia_c}/{mes_c}]"
 
-        # AGREGADO: expanded=abrir_todos controla si se muestra abierto o cerrado dinámicamente
         with st.expander(titulo_toggle, expanded=abrir_todos):
             col_c1, col_c2 = st.columns(2)
             with col_c1:
@@ -278,14 +277,15 @@ def pagina_pendientes():
             if df_curso_pendientes.empty:
                 st.success("🎉 ¡No hay pendientes bajo el criterio seleccionado para este curso!")
             else:
+                # --- AQUÍ SE SACARON LAS COLUMNAS DE ESTADO ---
                 columnas_base = ["Contacto Nuevo", "Contacto Viejo"]
                 
                 if not ver_cuota_2 and not ver_cuota_3:
-                    columnas_base += ["Estado", "Fecha de Aplazo", "Comentario"]
+                    columnas_base += ["Fecha de Aplazo", "Comentario"]
                 elif ver_cuota_2 and not ver_cuota_3:
-                    columnas_base += ["Estado Pago 2", "Fecha de Aplazo 2", "Comentario 2"]
+                    columnas_base += ["Fecha de Aplazo 2", "Comentario 2"]
                 else:
-                    columnas_base += ["Estado Pago 3", "Fecha de Aplazo 3", "Comentario 3"]
+                    columnas_base += ["Fecha de Aplazo 3", "Comentario 3"]
                 
                 columnas_base += ["Notif. Andre"]
 
@@ -576,7 +576,8 @@ def pagina_buscador():
     ver_c2 = False
     ver_c3 = False
     if mostrar_opcion_c2 or mostrar_opcion_c3:
-        st.write("#### 🛠️ Columnas opcionales de auditoría:")
+        st.write("#### ⚙️​​ Cuotas Opcionales a Agregar:")
+        st.caption("(Se agregan, no se reemplaza una por otra)")
         col_chk1, col_chk2 = st.columns(2)
         with col_chk1:
             if mostrar_opcion_c2:
