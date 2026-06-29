@@ -166,7 +166,7 @@ def pagina_pendientes():
         if total_alumnos_curso == 0:
             continue
 
-        # Evaluamos disponibilidad de Cuota 2 y Cuota 3 (que tengan valores no nulos/vacíos en la columna)
+        # Evaluamos si existen datos cargados para Cuota 2 y 3
         tiene_cuota2 = False
         if 'Estado Pago 2' in df_curso_total.columns:
             valores_c2 = df_curso_total['Estado Pago 2'].astype(str).str.strip()
@@ -177,49 +177,45 @@ def pagina_pendientes():
             valores_c3 = df_curso_total['Estado Pago 3'].astype(str).str.strip()
             tiene_cuota3 = not valores_c3.isin(['', 'None', 'nan', 'NaN']).all()
 
-        key_chk2 = f"chk2_{idx_curso}"
-        key_chk3 = f"chk3_{idx_curso}"
+        # Creamos un bloque visual limpio para los checkboxes de este curso
+        st.write(f"⚙️ **Filtros para:** {curso.get('Nombre')} (Nro: {curso.get('Nro de Curso')})")
+        col_c1, col_c2 = st.columns(2)
         
-        # Generamos los controles de casillas en la interfaz
         ver_cuota_2 = False
         ver_cuota_3 = False
         
-        col_c1, col_c2 = st.columns(2)
         with col_c1:
             if tiene_cuota2:
-                ver_cuota_2 = st.checkbox(f"Ver Cuota 2 - {curso.get('Nombre')} (Nro: {curso.get('Nro de Curso')})", key=key_chk2)
+                ver_cuota_2 = st.checkbox(f"Incluir Cuota 2", key=f"chk2_{idx_curso}")
         with col_c2:
             if tiene_cuota3 and (ver_cuota_2 or not tiene_cuota2):
-                ver_cuota_3 = st.checkbox(f"Ver Cuota 3 - {curso.get('Nombre')} (Nro: {curso.get('Nro de Curso')})", key=key_chk3)
+                ver_cuota_3 = st.checkbox(f"Incluir Cuota 3", key=f"chk3_{idx_curso}")
 
-        # Inicializamos máscaras de pendientes
+        # Identificamos quiénes están pendientes en cada cuota
         es_pendiente_c1 = pd.Series(False, index=df_curso_total.index)
         es_pendiente_c2 = pd.Series(False, index=df_curso_total.index)
         es_pendiente_c3 = pd.Series(False, index=df_curso_total.index)
 
-        # Evaluación Cuota 1
         if 'Estado' in df_curso_total.columns:
             es_pendiente_c1 = df_curso_total['Estado'].astype(str).str.strip().str.lower() != 'pagado'
 
-        # Evaluación Cuota 2
         if 'Estado Pago 2' in df_curso_total.columns:
             val_c2 = df_curso_total['Estado Pago 2'].astype(str).str.strip().str.lower()
             es_pendiente_c2 = (val_c2 != 'pagado') & (~val_c2.isin(['', 'none', 'nan']))
 
-        # Evaluación Cuota 3
         if 'Estado Pago 3' in df_curso_total.columns:
             val_c3 = df_curso_total['Estado Pago 3'].astype(str).str.strip().str.lower()
             es_pendiente_c3 = (val_c3 != 'pagado') & (~val_c3.isin(['', 'none', 'nan']))
 
-        # Lógica de asignación según el estado actual de las casillas
+        # El filtrado ahora es dinámico y acumulativo según lo que esté chequeado
         if not ver_cuota_2 and not ver_cuota_3:
             condicion_final_pendientes = es_pendiente_c1
             total_pendientes_metrica = es_pendiente_c1.sum()
         elif ver_cuota_2 and not ver_cuota_3:
-            condicion_final_pendientes = es_pendiente_c2
+            condicion_final_pendientes = es_pendiente_c1 | es_pendiente_c2
             total_pendientes_metrica = es_pendiente_c2.sum()
         else:
-            condicion_final_pendientes = es_pendiente_c3
+            condicion_final_pendientes = es_pendiente_c1 | es_pendiente_c2 | es_pendiente_c3
             total_pendientes_metrica = es_pendiente_c3.sum()
 
         df_curso_pendientes = df_curso_total[condicion_final_pendientes].copy()
@@ -229,16 +225,18 @@ def pagina_pendientes():
         dia_c = curso.get("Día", "-")
         mes_c = curso.get("Mes", "-")
 
-        # Título dinámico sin año y con métricas cambiantes (Pendientes / Total del curso)
-        titulo_toggle = f"📘 {nombre_c} (Nro: {nro_c}) — Fecha: {dia_c}/{mes_c} ({total_pendientes_metrica}/{total_alumnos_curso} pendientes)"
+        # 1) FORMATO EXACTO REQUERIDO: nombre, nro de curso fecha (dia/mes) (X/Y pendientes)
+        titulo_toggle = f"📘 {nombre_c} {nro_c} {dia_c}/{mes_c} ({total_pendientes_metrica}/{total_alumnos_curso} pendientes)"
 
+        # Usamos un contenedor controlado para inyectar el expander justo abajo
         with st.expander(titulo_toggle):
             if df_curso_pendientes.empty:
-                st.success("🎉 ¡No hay pendientes bajo el criterio seleccionado para este curso!")
+                st.success("🎉 ¡No hay filas pendientes con el criterio seleccionado!")
             else:
+                # 2) VISIBILIDAD ACUMULATIVA DE COLUMNAS: Siempre muestra lo anterior
                 columnas_base = ["Contacto Nuevo", "Contacto Viejo", "Estado", "Fecha de Pago", "Fecha de Aplazo", "Comentario", "Notif. Andre"]
                 
-                if ver_cuota_2:
+                if ver_cuota_2 or ver_cuota_3:
                     columnas_base += ["Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2"]
                 if ver_cuota_3:
                     columnas_base += ["Estado Pago 3", "Fecha de Pago 3", "Fecha de Aplazo 3", "Comentario 3"]
@@ -253,6 +251,7 @@ def pagina_pendientes():
                     width="stretch",
                     hide_index=True
                 )
+        st.markdown("---") # Separador estético entre cursos
 
 def pagina_recaudado():
     st.title("📊 Resumen de Recaudación Mensual")
