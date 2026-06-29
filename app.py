@@ -123,7 +123,7 @@ def pagina_pendientes():
         
     periodos = selector_fechas_multiples("pendientes")
     
-    # Filtrar el DataFrame original de pagos acumulando las coincidencias
+    # Filtrar el DataFrame original de pagos acumulando las fechas
     df_filtrado_acum = pd.DataFrame()
     for p in periodos:
         df_mes_año = df_pagos[
@@ -136,10 +136,8 @@ def pagina_pendientes():
         st.info("No se encontraron registros de pagos para los meses seleccionados.")
         return
 
-    # Clonamos para no destruir la data original durante el formateo de nombres
+    # Clonamos para trabajar los nombres reales en Contacto Nuevo/Viejo
     df_procesado = df_filtrado_acum.copy()
-
-    # Reemplazamos los booleanos de contacto nuevo/viejo por el nombre real si son verdaderos
     if 'Contacto' in df_procesado.columns:
         for col_contacto in ["Contacto Nuevo", "Contacto Viejo"]:
             if col_contacto in df_procesado.columns:
@@ -148,74 +146,130 @@ def pagina_pendientes():
                     axis=1
                 )
 
-    # Identificamos filas que tengan AL MENOS una cuota pendiente
-    condicion_pendiente = pd.Series(False, index=df_procesado.index)
-    
-    if 'Estado' in df_procesado.columns:
-        condicion_pendiente |= (df_procesado['Estado'].astype(str).str.strip().str.lower() != 'pagado')
-    if 'Estado Pago 2' in df_procesado.columns:
-        condicion_pendiente |= (df_procesado['Estado Pago 2'].astype(str).str.strip().str.lower().isin(['', 'pendiente', 'debe'])) # Ajustar según tus estados para cuota 2
-    if 'Estado Pago 3' in df_procesado.columns:
-        condicion_pendiente |= (df_procesado['Estado Pago 3'].astype(str).str.strip().str.lower().isin(['', 'pendiente', 'debe'])) # Ajustar según tus estados para cuota 3
-
-    df_no_pagados = df_procesado[condicion_pendiente]
-    
-    if df_no_pagados.empty:
-        st.success("🎉 ¡Todos los cursos seleccionados están completamente al día!")
-        return
-
-    group_cols = [c for c in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"] if c in df_no_pagados.columns]
-    
+    # Definimos columnas clave de agrupación
+    group_cols = [c for c in ["Nombre", "Nro de Curso", "Día", "Mes", "Año"] if c in df_procesado.columns]
     if not group_cols:
-        st.dataframe(df_no_pagados, width="stretch")
+        st.dataframe(df_procesado, width="stretch")
         return
         
-    cursos_unicos = df_no_pagados[group_cols].drop_duplicates()
+    cursos_unicos = df_procesado[group_cols].drop_duplicates()
     
     for idx_curso, curso in cursos_unicos.iterrows():
-        condicion = True
+        # Filtramos todos los alumnos que pertenecen a este curso específico (estén al día o no)
+        condicion_curso = True
         for col in group_cols:
-            condicion = condicion & (df_no_pagados[col] == curso[col])
+            condicion_curso = condicion_curso & (df_procesado[col] == curso[col])
             
-        df_curso = df_no_pagados[condicion].copy()
+        df_curso_total = df_procesado[condicion_curso].copy()
+        total_alumnos_curso = len(df_curso_total)
         
+        if total_alumnos_curso == 0:
+            continue
+
+        # Evaluamos disponibilidad de Cuota 2 y Cuota 3 (que tengan algún valor no nulo/vacío)
+        tiene_cuota2 = False
+        if 'Estado Pago 2' in df_curso_total.columns:
+            valores_c2 = df_curso_total['Estado Pago 2'].astype(str).str.strip()
+            tiene_cuota2 = not valores_c2.isin(['', 'None', 'nan', 'NaN']).all()
+
+        tiene_cuota3 = False
+        if 'Estado Pago 3' in df_curso_total.columns:
+            valores_c3 = df_curso_total['Estado Pago 3'].astype(str).str.strip()
+            tiene_cuota3 = not valores_c3.isin(['', 'None', 'nan', 'NaN']).all()
+
+        # Renderizamos primero los checkboxes para saber qué quiere filtrar el usuario en este curso
+        # Para que no afecte el diseño visual, lo metemos en un contenedor invisible que luego se expande
+         placeholder_titulo = st.empty()
+         
+         # Inicializamos variables de selección
+        ver_cuota_2 = False
+        ver_cuota_3 = False
+        
+        # Generamos una sección de control previa o interna. Para mantener la estética limpia, 
+        # creamos el expander y los controles se eligen adentro, recalculando dinámicamente el título.
+        
+        # Para lograr que los checkboxes definan el título del expander de forma fluida en Streamlit,
+        # usamos el "session_state" para guardar los estados de las casillas de cada curso antes de dibujar el expander.
+        key_chk2 = f"chk2_{idx_curso}"
+        key_chk3 = f"chk3_{idx_curso}"
+        
+        # Renderizamos los checkboxes en columnas arriba del expander o dentro de un bloque específico de configuración
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            if tiene_cuota2:
+                ver_cuota_2 = st.checkbox(f"Ver Cuota 2 - {curso.get('Nombre')}", key=key_chk2)
+        with col_c2:
+            if tiene_cuota3 and (ver_cuota_2 or not tiene_cuota2): # Habilitado si el 2 está chequeado o si el curso no tiene cuota 2
+                ver_cuota_3 = st.checkbox(f"Ver Cuota 3 - {curso.get('Nombre')}", key=key_chk3)
+
+        # Aplicamos la lógica de filtrado de PENDIENTES según las casillas marcadas
+        # Inicializamos máscaras booleanas
+        es_pendiente_c1 = pd.Series(False, index=df_curso_total.index)
+        es_pendiente_c2 = pd.Series(False, index=df_curso_total.index)
+        es_pendiente_c3 = pd.Series(False, index=df_curso_total.index)
+
+        # Evaluación Cuota 1
+        if 'Estado' in df_curso_total.columns:
+            es_pendiente_c1 = df_curso_total['Estado'].astype(str).str.strip().str.lower() != 'pagado'
+
+        # Evaluación Cuota 2
+        if 'Estado Pago 2' in df_curso_total.columns:
+            val_c2 = df_curso_total['Estado Pago 2'].astype(str).str.strip().str.lower()
+            es_pendiente_c2 = (val_c2 != 'pagado') & (~val_c2.isin(['', 'none', 'nan']))
+
+        # Evaluación Cuota 3
+        if 'Estado Pago 3' in df_curso_total.columns:
+            val_c3 = df_curso_total['Estado Pago 3'].astype(str).str.strip().str.lower()
+            es_pendiente_c3 = (val_c3 != 'pagado') & (~val_c3.isin(['', 'none', 'nan']))
+
+        # Construcción de la condición final e indicadores del título basándonos en los checks activos
+        if not ver_cuota_2 and not ver_cuota_3:
+            condicion_final_pendientes = es_pendiente_c1
+            total_pendientes_metrica = es_pendiente_c1.sum()
+        elif ver_cuota_2 and not ver_cuota_3:
+            condicion_final_pendientes = es_pendiente_c2
+            total_pendientes_metrica = es_pendiente_c2.sum()
+        else: # Si está seleccionado el 3 (o ambos 2 y 3)
+            condicion_final_pendientes = es_pendiente_c3
+            total_pendientes_metrica = es_pendiente_c3.sum()
+
+        # Filtrar el dataframe del curso para la vista de la tabla
+        df_curso_pendientes = df_curso_total[condicion_final_pendientes].copy()
+
+        # Si no hay pendientes bajo este criterio, podemos saltar o mostrarlo vacío al día
         nombre_c = curso.get("Nombre", "Curso")
         nro_c = curso.get("Nro de Curso", "-")
         dia_c = curso.get("Día", "-")
         mes_c = curso.get("Mes", "-")
-        
-        # Titulo modificado: Nombre, Nro de curso, Fecha sin Año y el texto de pendientes intacto
-        titulo_toggle = f"📘 {nombre_c} (Nro: {nro_c}) — Fecha: {dia_c}/{mes_c} ({len(df_curso)} pendientes)"
-        
+
+        # Armado del título dinámico solicitado: Nombre, Nro, Fecha (sin año) y (Pendientes / Total Inscritos)
+        titulo_toggle = f"📘 {nombre_c} (Nro: {nro_c}) — Fecha: {dia_c}/{mes_c} ({total_pendientes_metrica}/{total_alumnos_curso} pendientes)"
+
         with st.expander(titulo_toggle):
-            # Checkboxes dinámicos usando llaves únicas
-            st.write("🔧 **Columnas adicionales de cuotas:**")
-            col_chk2, col_chk3 = st.columns(2)
-            with col_chk2:
-                ver_cuota_2 = st.checkbox("Ver Cuota 2", key=f"chk2_{idx_curso}")
-            with col_chk3:
-                ver_cuota_3 = st.checkbox("Ver Cuota 3", key=f"chk3_{idx_curso}")
+            if df_curso_pendientes.empty:
+                st.success("🎉 ¡No hay pendientes bajo el filtro seleccionado para este curso!")
+            else:
+                # Columnas base a mostrar
+                columnas_base = ["Contacto Nuevo", "Contacto Viejo", "Estado", "Fecha de Pago", "Fecha de Aplazo", "Comentario", "Notif. Andre"]
+                
+                # Se agregan de forma aditiva las columnas si están chequeados
+                if ver_cuota_2:
+                    columnas_base += ["Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2"]
+                if ver_cuota_3:
+                    columnas_base += ["Estado Pago 3", "Fecha de Pago 3", "Fecha de Aplazo 3", "Comentario 3"]
 
-            # Construcción dinámica de columnas a mostrar
-            columnas_base = ["Contacto Nuevo", "Contacto Viejo", "Estado", "Fecha de Pago", "Fecha de Aplazo", "Comentario", "Notif. Andre"]
-            
-            if ver_cuota_2:
-                columnas_base += ["Estado Pago 2", "Fecha de Pago 2", "Fecha de Aplazo 2", "Comentario 2"]
-            if ver_cuota_3:
-                columnas_base += ["Estado Pago 3", "Fecha de Pago 3", "Fecha de Aplazo 3", "Comentario 3"]
-
-            # Filtrar solo las columnas que existan de verdad en la hoja de cálculo
-            cols_vista = [c for c in columnas_base if c in df_curso.columns]
-            df_vista = df_curso[cols_vista].copy()
-            
-            # Formateamos solo Notif. Andre (ya que Contacto Nuevo/Viejo ahora tienen nombres propios)
-            df_vista = apply_boolean_formatting(df_vista, ["Notif. Andre"])
-            
-            st.dataframe(
-                df_vista.style.apply(highlight_notif_andre, axis=1),
-                width="stretch",
-                hide_index=True
-            )
+                # Nos aseguramos de mostrar solo las que existan en las columnas reales del DataFrame
+                cols_vista = [c for c in columnas_base if c in df_curso_pendientes.columns]
+                df_vista = df_curso_pendientes[cols_vista].copy()
+                
+                # Formatear booleano de notificación de Andre
+                df_vista = apply_boolean_formatting(df_vista, ["Notif. Andre"])
+                
+                st.dataframe(
+                    df_vista.style.apply(highlight_notif_andre, axis=1),
+                    width="stretch",
+                    hide_index=True
+                )
 
 def pagina_recaudado():
     st.title("📊 Resumen de Recaudación Mensual")
