@@ -78,7 +78,7 @@ def highlight_notif_andre_rosa(row):
     is_true = val is True or str(val).strip().lower() in ['true', '1', 'sí', 'si', '✔️']
     if is_true:
         # Un color rosa malva profundo y apagado, bien diferenciado del rojo
-        return ['background-color: #876d87; color: #ffffff; font-weight: bold;'] * len(row)
+        return ['background-color: #ff7bff; color: #000000; font-weight: bold;'] * len(row)
     return [''] * len(row)
 
 def selector_fechas_multiples(key_prefix):
@@ -427,10 +427,14 @@ def pagina_recaudado():
 
         costo_unitario = 0 if pd.isna(costo_unitario) else costo_unitario
         
+        # Filtrar los alumnos pagados para el Recaudado Efectivo
         df_pagados = df_curso_alumnos[df_curso_alumnos[col_estado_activa].astype(str).str.strip().str.lower() == 'pagado']
         recaudado_real = pd.to_numeric(df_pagados[col_costo_activa], errors='coerce').sum()
         
-        esperado_total = costo_unitario * total_personas
+        # CAMBIO: Sumar la columna Costo para TODOS los alumnos del curso (independientemente de su estado)
+        esperado_total = pd.to_numeric(df_curso_alumnos[col_costo_activa], errors='coerce').sum()
+        
+        # Calcular la diferencia de lo que falta cobrar
         falta_cobrar = max(0.0, esperado_total - recaudado_real)
         
         total_contactos_nuevos = 0
@@ -622,10 +626,10 @@ def pagina_buscador():
         
         if es_notif:
             # Rosa/Vino apagado y pastel para modo oscuro
-            estilos = ['background-color: #4a1525; color: #ffffff; font-weight: bold;'] * len(fila)
+            estilos = ['background-color: #ff7bff; color: #000000; font-weight: bold;'] * len(fila)
         elif es_pendiente:
             # Rojo ladrillo/óxido apagado (no chillón)
-            estilos = ['background-color: #5c1d16; color: #ffffff; font-weight: bold;'] * len(fila)
+            estilos = ['background-color: #d93535; color: #ffffff; font-weight: bold;'] * len(fila)
             
         return estilos
 
